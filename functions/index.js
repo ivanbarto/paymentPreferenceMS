@@ -60,8 +60,9 @@ app.post('/api/paymentReference', (req, res) => {
             console.log(error);
             return res.status(500).json(
                 {
-                    success: true,
-                    message: 'la creacion de la preferencia de pago falló'
+                    success: false,
+                    message: 'la creacion de la preferencia de pago falló',
+                    preferenceId: ''
                 })
         });
 
