@@ -2,9 +2,14 @@ const functions = require('firebase-functions');
 const express = require('express')
 const app = express()
 
+const { initializeApp, applicationDefault, cert } = require('firebase-admin/app');
+const { getFirestore, Timestamp, FieldValue } = require('firebase-admin/firestore');
+
 const admin = require('firebase-admin');
 admin.initializeApp();
 
+initializeApp();
+const db = getFirestore();
 
 const mercadopago = require('mercadopago');
 mercadopago.configure({
@@ -74,29 +79,149 @@ app.post('/api/paymentReference', (req, res) => {
 })
 
 
+exports.notifyNewSubscriber = functions.firestore.document('subscriptions/{documentId}')
+    .onCreate(async (snap, context) => {
+        console.log("FUNCTION START ////////////////// \n\n")
 
-// Listens for new messages added to /messages/:documentId/original and creates an
-// uppercase version of the message to /messages/:documentId/uppercase
-exports.makeUppercase = functions.firestore.document('/messages/{documentId}')
-    .onCreate((snap, context) => {
-      // Grab the current value of what was written to Firestore.
-      const original = snap.data().original;
 
-      // Access the parameter `{documentId}` with `context.params`
-      functions.logger.log('Uppercasing', context.params.documentId, original);
+        // Grab the current value of what was written to Firestore.
+        const organizerId = snap.data().organizerId
+        const userName = snap.data().userName
+        const eventName = snap.data().eventName
 
-      const uppercase = original.toUpperCase();
+        const fcmTokenDockRef = db.collection('fcmTokens').doc(organizerId);
 
-      // You must return a Promise when performing asynchronous tasks inside a Functions such as
-      // writing to Firestore.
-      // Setting an 'uppercase' field in Firestore document returns a Promise.
-      return snap.ref.set({uppercase}, {merge: true});
+        try {
+            const doc = await fcmTokenDockRef.get();
+            if (!doc.exists) {
+                console.log('No such document!');
+
+            } else {
+                const fcmToken = doc.data().fcmToken
+
+                const payload = {
+                    token: fcmToken,
+                    notification: {
+                        title: '¡Nuevo candidato!',
+                        body: userName + " se suscribió al evento " + eventName
+                    },
+                    data: {
+                        body: "data",
+                    }
+                };
+
+                admin.messaging().send(payload).then((response) => {
+                    // Response is a message ID string.
+                    console.log('Successfully sent message:', response);
+                    return { success: true };
+                }).catch((error) => {
+                    return { error: error.code };
+                });
+
+            }
+
+        } catch (error) {
+            console.log("\n\n OCURRIÓ UN ERROR : " + error)
+
+        }
+
+
+
+
+        console.log("\n\nFUNCTION END ////////////////// \n\n")
     });
 
-// // Create and Deploy Your First Cloud Functions
-// // https://firebase.google.com/docs/functions/write-firebase-functions
-//
-// exports.helloWorld = functions.https.onRequest((request, response) => {
-//   functions.logger.info("Hello logs!", {structuredData: true});
-//   response.send("Hello from Firebase!");
-// });
+
+
+
+exports.notifyEventVacanciesEnd = functions.firestore.document('events/{documentId}')
+    .onUpdate(async (snap, context) => {
+        console.log("FUNCTION START ////////////////// \n\n")
+
+
+        // Grab the current value of what was written to Firestore.
+        const state = snap.after.data().state
+        const name = snap.after.data().name
+        const id = snap.after.data().id
+        console.log(state + " - " + name + " - " + id)
+
+        switch (state) {
+            case 2: {
+                const payload = {
+                    notification: {
+                        title: '¡Evento finalizado!',
+                        body: "El evento " + name + " ha cerrado la convocatoria. Ya puedes ver los resultados en la sección de Suscripciones."
+                    },
+                    data: {
+                        body: "data",
+                    },
+                    topic: "event_" + id
+                };
+                console.log("state 2 - sending to topi event_" + id)
+
+                admin.messaging().send(payload).then((response) => {
+                    // Response is a message ID string.
+                    console.log('Successfully sent message:', response);
+                    return { success: true };
+                }).catch((error) => {
+                    return { error: error.code };
+                });
+
+            }
+                break;
+
+
+            case 3: {
+                const payload = {
+                    notification: {
+                        title: '¡Evento cancelado! :(',
+                        body: "El evento " + name + " ha sido cancelado. ¡Ingresa a Artfinderzz y busca más eventos en los que participar!"
+                    },
+                    data: {
+                        body: "data",
+                    },
+                    topic: "event_" + id
+                };
+                console.log("state 3 - sending to topi event_" + id)
+
+                admin.messaging().send(payload).then((response) => {
+                    // Response is a message ID string.
+                    console.log('Successfully sent message:', response);
+                    return { success: true };
+                }).catch((error) => {
+                    return { error: error.code };
+                });
+            }
+                break;
+
+            case 1: {
+                const payload = {
+                    notification: {
+                        title: '¡Evento modificado!',
+                        body: "El evento " + name + " ha modificado alguno de sus detalles. Recuerda revisarlos para asegurar que el evento cumple tus criterios."
+                    },
+                    data: {
+                        body: "data",
+                    },
+                    topic: "event_" + id
+                };
+                console.log("state 1 - sending to topi event_" + id)
+
+                admin.messaging().send(payload).then((response) => {
+                    // Response is a message ID string.
+                    console.log('Successfully sent message:', response);
+                    return { success: true };
+                }).catch((error) => {
+                    return { error: error.code };
+                });
+            }
+                break;
+
+            default: console.log("DEFAULT")
+
+                break;
+        }
+
+        console.log("\n\nFUNCTION END ////////////////// \n\n")
+    });
+
